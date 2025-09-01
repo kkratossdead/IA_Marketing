@@ -1,0 +1,78 @@
+ETAPES HUMAINES POUR INSTALLER ET LANCER LE PROJET A PARTIR D'UN PC VIDE (WINDOWS)
+=====================================================================
+
+0. Ce que tu dois avoir sous la main
+------------------------------------
+- Une connexion Internet
+- Ta clé API Gemini (Google AI Studio)
+
+2. Installer Git
+----------------
+1. Va sur https://git-scm.com/download/win
+2. Télécharge le programme (64-bit installer)
+3. Lance l'installateur, laisse toutes les options par défaut (surtout "Add Git to PATH")
+4. Quand c'est fini, ouvre PowerShell et teste :
+   git --version
+
+3. Installer Python
+-------------------
+1. Va sur https://www.python.org/downloads/
+2. Clique sur "Download Python 3.x.x" (>= 3.10 recommandé)
+3. IMPORTANT : coche la case "Add Python to PATH" avant d'appuyer sur Install
+4. Après installation, vérifie :
+   python --version
+   pip --version
+
+4. Installer Visual Studio Code
+-------------------------------
+1. Va sur https://code.visualstudio.com/
+2. Télécharge l'installateur Windows
+3. Pendant l'installation, coche (si proposé) :
+   - "Add to PATH"
+   - "Register as default editor"
+4. Ouvre VS Code une première fois puis ferme (pour initialiser les dossiers)
+
+5. Cloner le projet depuis GitHub
+---------------------------------
+Dans PowerShell, choisis un dossier de travail (ex: Desktop) :
+   créez un dossier et localisez vous dessus : lancer le cmd dans cette localisation
+   executez les commandes suivante dans le terminal:
+   -git clone https://github.com/kkratossdead/IA_Marketing.git
+   -cd IA_Marketing
+   -code . 
+
+Normalement Vscode s'ouvrira.
+
+6. Créer un environnement virtuel Python dans le terminal VSCODE
+----------------------------------------
+Ouvrez un terminal dans la section en haut terminal> new terminal
+   python -m venv .venv
+   .\.venv\Scripts\activate
+(Tu dois voir (.venv) au début de ta ligne de commande.)
+
+7. Installer les dépendances du projet
+--------------------------------------
+   pip install -r requirements.txt
+
+8. Ajouter ta clé API Gemini
+----------------------------
+Méthode recommandée (fichier .env) :
+1. Crée un fichier nommé .env à la racine du projet (même dossier que app_streamlit.py)
+2. Mets dedans :
+   GEMINI_API_KEY="TA_CLE_ICI"
+
+Alternative temporaire : tu peux coller la clé directement dans la barre latérale de l'appli une fois lancée.
+
+9. Lancer l'application Streamlit
+----------------------------------
+   streamlit run app_streamlit.py
+
+Après quelques secondes, ton navigateur s'ouvre (sinon copie l'URL affichée, ex: http://localhost:8501)
+
+10. Utilisation rapide
+----------------------
+- Saisis ton prompt dans la zone "Describe the target image".
+- (Optionnel) Clique sur ✨ Prompt Enhancer pour enrichir ton prompt.
+- Ajoute 0–3 images de référence.
+- Clique sur 🚀 Generate.
+- Télécharge les résultats ou retrouve-les dans la "Library".

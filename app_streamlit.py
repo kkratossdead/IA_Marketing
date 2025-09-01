@@ -6,6 +6,18 @@ import base64
 import os
 from datetime import datetime
 
+# ------------------------------------------------------------------
+# Early session_state initialization to avoid KeyError on first load
+# ------------------------------------------------------------------
+for _key, _default in {
+    "enhanced_prompt": "",
+    "results": [],
+    "library": [],
+    "last_prompt": "",
+}.items():
+    if _key not in st.session_state:
+        st.session_state[_key] = _default
+
 # -----------------------------
 # Page config & base styles
 # -----------------------------
@@ -122,9 +134,15 @@ with st.container():
     st.markdown("### ✍️ Prompt")
     left, right = st.columns([0.6,0.4])
     with left:
+        # Inject replacement prompt (avant création du widget) si demandé
+        if "temp_prompt_replacement" in st.session_state:
+            st.session_state["prompt_input"] = st.session_state["temp_prompt_replacement"]
+            del st.session_state["temp_prompt_replacement"]
+            st.session_state["show_replace_success"] = True
+
         prompt = st.text_area(
             "Describe the target image",
-            key="prompt_input",  # important pour manipuler via session_state
+            key="prompt_input",  # la valeur initiale provient de session_state si existante
             placeholder=(
                 "e.g. Replace the car with a white Volkswagen T-Roc, black roof, glossy black wheels, "
                 "sport grille, LED headlights, parked on a cliff, ocean and pine trees in the background; "
@@ -132,6 +150,10 @@ with st.container():
             ),
             height=140,
         )
+        # Message de confirmation après rerun
+        if st.session_state.get("show_replace_success"):
+            st.success("Base prompt replaced.")
+            del st.session_state["show_replace_success"]
     with right:
         preset = st.selectbox(
             "Presets",
@@ -154,81 +176,126 @@ with st.container():
             prompt = (prompt + ("\n\n" if prompt else "") + add_on).strip()
             st.info("Preset applied to prompt.")
 
-# # -----------------------------
-# # Prompt Enhancer (Gemini text)
-# # -----------------------------
-# @st.cache_resource(show_spinner=False)
-# def _text_model(api_key: str):
-#     genai.configure(api_key=api_key)
-#     return genai.GenerativeModel("gemini-2.0-flash")
+# -----------------------------
+# Prompt Enhancer Functions (définies avant utilisation)
+# -----------------------------
+@st.cache_resource(show_spinner=False)
+def _text_model(api_key: str):
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel("gemini-2.0-flash")
 
-# def enhance_prompt(base_prompt: str, aspect_ratio: str, preset_label: str) -> str:
-#     """
-#     Appelle un modèle texte pour booster le prompt utilisateur.
-#     """
-#     system_hint = (
-#         "You are an expert creative director for automotive marketing shots. "
-#         "Rewrite and optimize the user's prompt for image generation. "
-#         "Keep it concise but richly descriptive (camera, lighting, scene, materials, reflections). "
-#         "Enforce brand-friendly composition with clean negative space for CTA if relevant. "
-#         "Return ONLY the improved prompt, no commentary."
-#     )
-#     constraints = (
-#         f"Aspect ratio: {aspect_ratio}. "
-#         "If applicable: crisp details, natural reflections on paint, realistic shadows, "
-#         "no text baked into the image, avoid watermarks, editorial quality."
-#     )
-#     if preset_label and preset_label != "— None":
-#         constraints += f" Style preset: {preset_label}."
-#     user = f"Original prompt: {base_prompt}"
+def enhance_prompt(base_prompt: str, aspect_ratio: str, preset_label: str, uploaded_images=None) -> str:
+    """
+    Appelle un modèle texte pour booster le prompt utilisateur avec une approche de Prompt Enhancer AI.
+    """
+    system_hint = (
+        "Act as a Prompt Enhancer AI that takes user-input prompts and transforms them into more engaging, "
+        "detailed, and thought-provoking image generation prompts. Describe the process you follow to enhance a prompt, "
+        "the types of improvements you make, and share an example of how you'd turn a simple, one-sentence prompt into an "
+        "enriched, multi-layered description that encourages deeper visual thinking and more insightful image generation.\n\n"
+        
+        "Your enhancement process follows these steps:\n"
+        "1. ANALYZE the user's basic request to identify core visual elements and intent\n"
+        "2. EXPAND with rich descriptive details (lighting, composition, mood, materials, textures)\n"
+        "3. ENHANCE with professional photography/cinematography techniques\n"
+        "4. LAYER multiple dimensions of visual storytelling (emotional, technical, aesthetic)\n"
+        "5. STRUCTURE for maximum AI image generation effectiveness\n\n"
+        
+        "Transform simple prompts into multi-layered, comprehensive descriptions that include:\n"
+        "- Precise technical specifications (camera angles, lighting setup, focal length, depth of field)\n"
+        "- Emotional and atmospheric elements (mood, feeling, brand personality, narrative)\n"
+        "- Visual composition rules (rule of thirds, negative space, leading lines, symmetry)\n"
+        "- Material and texture details (paint reflections, surface properties, environmental interactions)\n"
+        "- Professional quality indicators (editorial style, commercial photography standards)\n"
+        "- Sensory elements that translate to visual impact (temperature, movement, energy)\n\n"
+        
+        "Example transformation:\n"
+        "Simple prompt: 'White car on road'\n"
+        "Enhanced prompt: 'Pristine white luxury sedan positioned dynamically on a winding coastal highway, "
+        "captured with a 85mm lens at f/2.8 creating shallow depth of field, golden hour lighting casting warm "
+        "reflections across the polished paint surface, dramatic ocean vista stretching to the horizon, "
+        "composition following rule of thirds with negative space for brand messaging, editorial automotive "
+        "photography style with crisp details and natural shadows, conveying freedom and aspiration.'\n\n"
+        
+        "Return ONLY the enhanced prompt - no explanations, no commentary, just the improved prompt ready for image generation."
+    )
+    
+    constraints_and_context = (
+        f"Target aspect ratio: {aspect_ratio}\n"
+        "Requirements: Crisp details, natural reflections on paint, realistic shadows, "
+        "no text baked into the image, avoid watermarks, editorial/commercial quality.\n"
+    )
+    
+    if preset_label and preset_label != "— None":
+        constraints_and_context += f"Style preset to incorporate: {preset_label}\n"
+    
+    if uploaded_images:
+        img_count = len(uploaded_images)
+        constraints_and_context += f"Reference images provided ({img_count} images): Use their style, composition, lighting, and mood as inspiration for the enhanced prompt.\n"
+    
+    user_input = f"Original user prompt to enhance: \"{base_prompt}\"\n\n{constraints_and_context}"
 
-#     model_txt = _text_model(API_KEY)
-#     resp = model_txt.generate_content([system_hint, constraints, user])
-#     try:
-#         return resp.text.strip()
-#     except Exception:
-#         return base_prompt  # fallback
+    try:
+        model_txt = _text_model(API_KEY)
+        resp = model_txt.generate_content([system_hint, user_input])
+        return resp.text.strip()
+    except Exception:
+        return base_prompt  # fallback
 
-# enh_col1, enh_col2, enh_col3 = st.columns([0.25, 0.25, 0.5])
-# with enh_col1:
-#     enhance_btn = st.button("✨ Prompt Enhancer", help="Improve the prompt for best image results")
+# Bouton Prompt Enhancer placé sous la zone de prompt
+enhance_btn = st.button("✨ Prompt Enhancer", help="Transform your  basic prompt into a detailed, professional image generation prompt")
 
-# # Espace pour stocker et afficher la version améliorée
-# if "enhanced_prompt" not in st.session_state:
-#     st.session_state["enhanced_prompt"] = ""
+# (State key 'enhanced_prompt' already initialized above)
 
-# if enhance_btn:
-#     if not API_KEY:
-#         st.error("Please enter your Gemini API key in the sidebar before enhancing.")
-#     elif not st.session_state.get("prompt_input"):
-#         st.warning("Write a base prompt first.")
-#     else:
-#         with st.spinner("Enhancing prompt…"):
-#             improved = enhance_prompt(
-#                 base_prompt=st.session_state["prompt_input"],
-#                 aspect_ratio=ratio,
-#                 preset_label=preset
-#             )
-#         st.session_state["enhanced_prompt"] = improved
+if enhance_btn:
+    if not API_KEY:
+        st.error("Please enter your Gemini API key in the sidebar before enhancing.")
+    elif not st.session_state.get("prompt_input"):
+        st.warning("Write a base prompt first.")
+    else:
+        with st.spinner("Enhancing your prompt with AI..."):
+            improved = enhance_prompt(
+                base_prompt=st.session_state["prompt_input"],
+                aspect_ratio=ratio,
+                preset_label=preset,
+                uploaded_images=None
+            )
+        st.session_state["enhanced_prompt"] = improved
 
-# # Affichage du prompt amélioré
-# if st.session_state["enhanced_prompt"]:
-#     st.markdown("##### ✅ Enhanced Prompt")
-#     st.code(st.session_state["enhanced_prompt"], language="md")
-#     rep_col1, rep_col2 = st.columns([0.25, 0.75])
-#     with rep_col1:
-#         if st.button("↔️ Replace base prompt"):
-#             st.session_state["prompt_input"] = st.session_state["enhanced_prompt"]
-#             st.success("Base prompt replaced with the enhanced version.")
+# Affichage du prompt amélioré avec hauteur adaptative (utilise .get pour robustesse)
+if st.session_state.get("enhanced_prompt"):
+    st.markdown("##### ✅ Enhanced Prompt")
+    # Calcul de la hauteur basée sur la longueur du texte
+    text_length = len(st.session_state["enhanced_prompt"])
+    height = max(140, min(400, text_length // 3))  # Hauteur adaptative entre 140 et 400px
+    
+    st.text_area(
+        "Enhanced prompt (ready to use):",
+        value=st.session_state["enhanced_prompt"],
+        height=height,
+        disabled=True,
+        key="enhanced_display"
+    )
+    
+    rep_col1, rep_col2 = st.columns([0.25, 0.75])
+    with rep_col1:
+        if st.button("↔️ Replace base prompt"):
+            # Utiliser st.experimental_set_query_params pour forcer le rechargement avec la nouvelle valeur
+            if "enhanced_prompt" in st.session_state and st.session_state["enhanced_prompt"]:
+                # Stocker temporairement la valeur enhanced dans une autre clé
+                st.session_state["temp_prompt_replacement"] = st.session_state["enhanced_prompt"]
+                st.success("Base prompt will be replaced on next refresh.")
+                st.rerun()
 
 # -----------------------------
-# Upload Zone
+# Upload Zone (déplacée avant le Prompt Enhancer)
 # -----------------------------
 st.markdown("### 🖼️ Reference Images (optional)")
 uploaded_images = st.file_uploader(
     "Drop up to 3 images (order = priority)",
     type=["jpg", "jpeg", "png"],
     accept_multiple_files=True,
+    key="reference_images_uploader"
 )
 
 if uploaded_images:
@@ -342,7 +409,7 @@ if "library" not in st.session_state:
     st.session_state["library"] = []
 
 # Quand on génère, sauvegarde dans la bibliothèque
-if gen_btn and "results" in st.session_state and st.session_state["results"]:
+if gen_btn and st.session_state.get("results"):
     st.session_state["library"].append({
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "prompt": st.session_state["last_prompt"],
@@ -363,7 +430,7 @@ if st.session_state["library"]:
                         data=raw,
                         file_name=f"auto_creative_{entry['timestamp'].replace(':','-')}_{i+1}.png",
                         mime="image/png",
-                        width='stretch',
+                        use_container_width=True,
                     )
 
 
